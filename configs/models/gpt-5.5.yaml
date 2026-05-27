@@ -1,0 +1,6 @@
+id: gpt-5.5
+provider: azure_openai
+model: gpt-5.5
+max_output_tokens: 16384
+temperature: 1.0
+# Thinking level is set per-experiment via the experiment `thinking:` matrix.

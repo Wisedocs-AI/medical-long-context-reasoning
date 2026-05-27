@@ -1,0 +1,82 @@
+name: test
+models: 
+  - gemini-3.1-flash-lite-preview
+  - gemini-3.5-flash-preview
+  - claude-sonnet-4-6-gcp
+  - gpt-5.5
+cases:
+  # - 147cf208-0b81-4d2b-bf6e-87dc3e42c1a7
+  # - 2d84d250-c2f8-452b-b054-38e9eb0b55e3
+  # - 3cacbce6-af89-41dc-bd18-21567dfe0f64
+  # - 5bea0e37-15ab-4d5e-a4ee-f144cde6446e
+  # - aa735d87-c829-47ce-97c3-f63832ef8622
+  # - ad128767-f77b-4947-9d69-f8d35c292fde
+  # - c53d48ac-0a88-4a7a-8cc5-e5acaa8d2e0a
+  - e42edfe0-c7bb-4688-bc03-76c24dd6fee1
+  # - f1f8078e-23b3-4351-9c8d-01f26a90dc18
+  # - fa21451a-4b22-4ea6-8fc4-0efe99fbe56a
+modalities: [text]
+junk_context_ratio: [0.5]
+thinking:
+  default: [minimal]
+  overrides:
+    claude-opus-4-8-gcp: [low]
+    claude-sonnet-4-6-gcp: [low]
+    gpt-5.5: [low]
+    gpt-5.4: [low]
+    gpt-5.4-mini: [low]
+    gemini-3.1-pro-preview: [low]
+prompt_categories:
+  - "Tier 1 · Easy"
+  - "Tier 2 · Medium"
+  - "Tier 3 · Hard"
+  # - "Tier 4 · Expert"
+  # - "Multi-part · Compound"
+  # - "Double · Trap"
+allowed_filler_forms:
+  - ab-vehicle-inspection-report
+  - abn-form
+  - cms-10106
+  - cms-10146
+  - cms-10455
+  - cms-123
+  - cms-1696
+  - cms-1771
+  - cms-209
+  - cms-2728
+  - cms-460
+  - cms-576
+  - cms-633
+  - cms-671
+  - cms-724
+  - cms-8550
+  - form-1
+  - initial-hospital-visit-note
+  - ocf-1
+  - ocf-2
+  - ocf-3
+  - ocf-4
+  - ocf-5
+  - ocf-6
+  - ocf-10
+  - ocf-12
+  - ocf-13
+  - ocf-18
+  - ocf-19
+  - ocf-21
+  - ocf-22
+  - ocf-23
+  - ocf-24
+  - ocf-25
+  - ocf-26
+  - subsequent-impatient-visit-note
+filler_subdir: image_gen_1variant
+repetitions: 1
+seed: 42
+output_dir: runs
+concurrency:
+  max_workers: 32
+retry:
+  max_attempts: 5
+  initial_backoff_s: 2.0
+  max_backoff_s: 120.0

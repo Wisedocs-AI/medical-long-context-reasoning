@@ -1,0 +1,43 @@
+[project]
+name = "mlcr"
+version = "0.1.0"
+description = "Long-context LLM evaluation experiment runner"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+    "tiktoken>=0.7",
+    "tenacity>=8.2",
+    "rich>=13.0",
+    "pillow>=10.0",
+    "python-dotenv>=1.0",
+    "faker>=25.0",
+]
+
+[project.optional-dependencies]
+# Claude via AWS Bedrock (uses AWS_PROFILE / standard AWS credential chain)
+anthropic = ["anthropic[bedrock]>=0.40"]
+# Gemini via Vertex AI (uses GOOGLE_CLOUD_PROJECT + GOOGLE_APPLICATION_CREDENTIALS)
+google = ["google-genai>=0.3", "google-auth>=2.0"]
+# GPT via Azure OpenAI (uses AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT)
+azure = ["openai>=1.30"]
+# Hugging Face dataset download (mlcr download)
+hf = ["datasets>=3.0"]
+all = ["anthropic[bedrock]>=0.40", "google-genai>=0.3", "google-auth>=2.0", "openai>=1.30", "datasets>=3.0"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+mlcr = "mlcr.cli:main"
+mlcr-score = "mlcr.scoring:main"
+mlcr-backfill = "mlcr.backfill:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

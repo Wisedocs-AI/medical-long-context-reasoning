@@ -1,0 +1,6 @@
+id: claude-sonnet-4-6-gcp
+provider: anthropic_gcp
+model: claude-sonnet-4-6@default
+max_output_tokens: 16384
+temperature: 1.0
+# Thinking level is set per-experiment via the experiment `thinking:` matrix.
