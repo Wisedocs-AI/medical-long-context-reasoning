@@ -4,7 +4,7 @@ from __future__ import annotations
 
 Implements the evaluation pipeline described in docs/llm_judge.md:
 
-  Gate 0 (free)  — Conciseness: whitespace-stripped char count <= 3x reference
+  Gate 0 (free)  — Conciseness: whitespace-stripped char count <= 5x reference
   Gate 1 (LLM)  — Completeness + Accuracy: single call per model, 3-model majority vote
 
 Writes judge_* columns into results_scoring.csv.
@@ -33,6 +33,8 @@ _JUDGE_COLS = [
     "judge_accurate",
     "judge_correct",
     "judge_votes",
+    "judge_complete_votes",
+    "judge_accurate_votes",
     "judge_rationales",
     "judge_input_tokens",
     "judge_output_tokens",
@@ -48,41 +50,94 @@ _DEFAULT_JUDGE_MODELS = [
 
 _JUDGE_SYSTEM = (
     "You are a meticulous evaluation judge for a long-context medical document "
-    "question-answering benchmark. You are given a question, a human-validated "
-    "reference answer (the ground truth), and a model's response. Evaluate the "
-    "response on ALL of the following criteria:\n\n"
-    "A response PASSES when ALL hold:\n\n"
-    "1. COMPLETENESS\n"
-    "   a. Field coverage: every field the question asks for has a corresponding "
-    "answer in the response (no missing fields).\n"
-    "   b. Detail completeness: all factual detail present in the reference answer "
-    "is captured by the response (no missing information).\n\n"
-    "2. ACCURACY\n"
-    "   a. Severity preservation: the response does not upgrade, downgrade, or alter "
-    "the severity or intensity of any condition, injury, finding, or symptom "
-    "compared to the reference (e.g., \"mild\" must not become \"moderate\", "
-    "\"partial tear\" must not become \"complete tear\", \"improving\" must not "
-    "become \"worsening\").\n"
-    "   b. Factual accuracy: every fact stated in the response (dates, names, body "
-    "parts, measurements, dosages, diagnoses, providers, procedures) matches "
-    "the reference exactly. No values are changed, swapped, or fabricated.\n\n"
-    "A response FAILS if ANY of these are true:\n"
-    "- A field the question asks for is unanswered\n"
-    "- Detail from the reference is missing\n"
-    "- Severity is changed in either direction (upgrade or downgrade)\n"
-    "- Any date, name, number, body part, diagnosis, or measurement is altered\n"
-    "- Information is misattributed (e.g., swaps which provider said what)\n"
-    "- Fabricated facts not present in the reference are introduced\n\n"
+    "question-answering benchmark. You are given:\n"
+    "1. SOURCE DOCUMENTS (ground truth)\n"
+    "2. QUESTION\n"
+    "3. A human-validated REFERENCE ANSWER (a passing answer that defines the expected scope)\n"
+    "4. A MODEL RESPONSE to evaluate.\n\n"
+
+    "Use the REFERENCE ANSWER to determine what information is expected. "
+    "Use the SOURCE DOCUMENTS as the authoritative source for factual correctness.\n\n"
+
+    "A response PASSES only if BOTH completeness and accuracy are true. These are "
+    "INDEPENDENT dimensions — a response can fail both simultaneously. Evaluate each on "
+    "its own criteria. Do NOT route errors between dimensions.\n\n"
+
+    "1. COMPLETENESS (Is anything MISSING?)\n"
+    "   Completeness = same reasoning chain + comparable specific evidence + all key "
+    "qualifiers from the REFERENCE ANSWER.\n\n"
+    "   a. Every field or sub-question is addressed (a wrong answer still counts as "
+    "addressed — wrong answers are accuracy failures, not completeness failures).\n"
+    "   b. Every intermediate analytical link in the REFERENCE ANSWER's reasoning chain "
+    "must appear. If the reference argues A→B→C→D, all links must be present — not just "
+    "the final conclusion. Example: 'L4-5 was the acute injury site → progression "
+    "converted surgery to three-level fusion → ruled out surgery' requires all three "
+    "links; just saying 'L4-5 was inadequately attributed' is INCOMPLETE.\n"
+    "   c. NEGATIVE FINDINGS ('no provider documented X,' 'no clinical rationale was "
+    "given,' 'the record lacks Y') are key analytical findings, just as important as "
+    "positive findings. If the reference highlights an absence or gap, the model must "
+    "include it.\n"
+    "   d. If the reference cites specific evidence (visits, dates, scores), the model "
+    "must cite specific evidence at comparable depth — not vague summaries. It need not "
+    "cite the EXACT same data points, but must provide specifics for ~80% of claims where "
+    "the reference does. Missing one or two minor data points is acceptable; bare "
+    "conclusions with no specifics when the reference provides many is INCOMPLETE.\n"
+    "   e. Equivalent wording from the SOURCE DOCUMENTS is acceptable.\n"
+    "   f. Completeness concerns ONLY what is MISSING — never what is WRONG. A wrong fact "
+    "is an accuracy issue, not completeness.\n\n"
+
+    "2. ACCURACY (Is anything WRONG?)\n"
+    "   Accuracy = every stated claim is factually correct per the SOURCE DOCUMENTS.\n\n"
+    "   a. Dates, visit numbers, names, body parts, measurements, dosages, diagnoses, "
+    "providers, procedures, timelines, counts, and sequences must be correct.\n"
+    "   b. A single wrong date, wrong visit, wrong count, wrong attribution, or fabricated "
+    "claim makes accurate=false — even if the overall narrative/conclusion is correct.\n"
+    "   c. Reaching the OPPOSITE conclusion from what the SOURCE DOCUMENTS support is an "
+    "accuracy failure.\n"
+    "   d. Reasonable inferences from documented data are NOT accuracy failures. Omitting "
+    "a qualifier like 'no provider attributed this' is a COMPLETENESS issue, not accuracy.\n"
+    "   e. Accuracy concerns ONLY claims that are STATED but wrong — never what is MISSING. "
+    "TEST: Can you point to a specific sentence in the MODEL RESPONSE that states something "
+    "contradicted by the SOURCE DOCUMENTS? If NOT, accurate=true.\n"
+    "   f. VERIFICATION: Before setting accurate=true, check each specific claim (visit "
+    "numbers, dates, attributions, conclusions) individually against the source. Do not "
+    "pass based on overall narrative coherence.\n\n"
+
+    "BOUNDARY RULE — the single test:\n"
+    "- 'The response does not mention X' => COMPLETENESS (never accuracy)\n"
+    "- 'The response says X but the source says Y' => ACCURACY (never completeness)\n\n"
+
+    "FAILS COMPLETENESS if:\n"
+    "- A field/sub-question is entirely unaddressed\n"
+    "- An intermediate reasoning link from the reference is absent\n"
+    "- A negative finding or caveat from the reference is missing\n"
+    "- The reference cites specifics but the model gives only vague summaries\n\n"
+
+    "FAILS ACCURACY if:\n"
+    "- Any factual claim contradicts the SOURCE DOCUMENTS\n"
+    "- A date, visit, provider, measurement, count, attribution, or sequence is wrong\n"
+    "- A claim is fabricated with no basis in the source\n"
+    "- The conclusion is opposite to what the source supports\n\n"
+
     "Do NOT penalize:\n"
-    "- Differences in formatting, phrasing, wording, or ordering\n"
-    "- Equivalent representations (e.g., \"10/25/2022\" vs \"October 25, 2022\")\n"
-    "- Extra harmless detail beyond what the reference provides, as long as nothing "
-    "is missing or incorrect\n\n"
-    "Judge meaning, not surface form. Respond with ONLY a single JSON object (no "
-    "markdown fencing), using exactly these keys:\n\n"
+    "- Formatting, wording, or ordering differences\n"
+    "- Equivalent date/number representations\n"
+    "- Medical abbreviations or synonymous terminology\n"
+    "- Extra source-supported information beyond the reference\n"
+    "- Reasonable inferences that do not contradict the source\n\n"
+
+    "RATIONALE DISCIPLINE:\n"
+    "- accurate=false rationale must cite a WRONG claim (not an omission)\n"
+    "- complete=false rationale must cite MISSING information (not a wrong fact)\n"
+    "- Self-check: if you wrote 'missing X' for accuracy, change to accurate=true\n"
+    "- Self-check: if you wrote 'incorrectly states X' for completeness, change to "
+    "complete=true (unless the question was entirely unaddressed)\n\n"
+
+    "Respond with ONLY a single JSON object (no markdown fencing):\n"
     '{"complete": boolean, "accurate": boolean, "rationale": string}\n\n'
-    "CRITICAL: The rationale MUST be at most 1-2 short sentences (under 150 characters). "
-    "If failing, name only the single most important issue. Be extremely brief."
+
+    "CRITICAL: Rationale MUST be 1-2 short sentences (under 150 characters). "
+    "If failing, report only the single most important reason."
 )
 
 
@@ -235,6 +290,23 @@ def heuristic_scores(reference: str, prediction: str) -> dict[str, float]:
 
 
 # ---------------------------------------------------------------------------
+# Source material loading
+# ---------------------------------------------------------------------------
+
+
+def _load_case_source(case_uuid: str, repo_root: Path) -> str:
+    """Load all summary pages for a case, concatenated. Raises if missing."""
+    case_dir = repo_root / "cases" / case_uuid / "summaries"
+    if not case_dir.is_dir():
+        raise FileNotFoundError(
+            f"Case summaries not found at {case_dir}. "
+            f"Run 'mlcr download --prepare-for-harness' first."
+        )
+    pages = sorted(p for p in case_dir.iterdir() if p.suffix == ".txt")
+    return "\n\n".join(p.read_text(encoding="utf-8", errors="replace") for p in pages)
+
+
+# ---------------------------------------------------------------------------
 # Gate 0: Conciseness
 # ---------------------------------------------------------------------------
 
@@ -247,7 +319,7 @@ def passes_conciseness_gate(response: str, reference: str) -> bool:
     ref_len = stripped_char_count(reference)
     if ref_len == 0:
         return stripped_char_count(response) == 0
-    return stripped_char_count(response) <= 3 * ref_len
+    return stripped_char_count(response) <= 5 * ref_len
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +329,7 @@ def _build_user_text(question: str, reference: str, response: str) -> str:
     return (
         "QUESTION:\n"
         f"{question}\n\n"
-        "REFERENCE ANSWER (ground truth):\n"
+        "REFERENCE ANSWER (human-validated):\n"
         f"{reference}\n\n"
         "MODEL RESPONSE (to evaluate):\n"
         f"{response}\n"
@@ -305,9 +377,9 @@ class Judge:
         from mlcr.thinking import apply_thinking
 
         base_cfg = ModelConfig.load(model_config_path)
-        self._cfg = apply_thinking(base_cfg, "none")
+        self._cfg = apply_thinking(base_cfg, "medium")
         self._cfg.temperature = 1.0
-        self._cfg.max_output_tokens = 2048
+        self._cfg.max_output_tokens = 16384
         self._apply_billing_labels()
 
         self._provider = get(self._cfg.provider)
@@ -331,7 +403,7 @@ class Judge:
     def model_id(self) -> str:
         return self._model_id
 
-    def evaluate(self, question: str, reference: str, response: str) -> dict[str, Any]:
+    def evaluate(self, question: str, reference: str, response: str, source_docs: str = "") -> dict[str, Any]:
         """Run the combined completeness + accuracy judge.
 
         Returns {"complete": bool|None, "accurate": bool|None, "rationale": str, "error": str, "usage": dict}.
@@ -349,6 +421,7 @@ class Judge:
         req = ChatRequest(
             system=_JUDGE_SYSTEM,
             user_text=_build_user_text(question, reference, response),
+            prefix_text=f"SOURCE DOCUMENTS:\n{source_docs}" if source_docs else None,
             images=[],
             model_cfg=self._cfg,
         )
@@ -386,7 +459,7 @@ class Jury:
         return [j.model_id for j in self._judges]
 
     def evaluate(
-        self, question: str, reference: str, response: str
+        self, question: str, reference: str, response: str, source_docs: str = ""
     ) -> dict[str, Any]:
         """Run all judges and return the majority-vote verdict with full detail."""
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -395,13 +468,15 @@ class Jury:
 
         with ThreadPoolExecutor(max_workers=len(self._judges)) as ex:
             futures = {
-                ex.submit(j.evaluate, question, reference, response): j.model_id
+                ex.submit(j.evaluate, question, reference, response, source_docs): j.model_id
                 for j in self._judges
             }
             for fut in as_completed(futures):
                 results[futures[fut]] = fut.result()
 
         votes: dict[str, bool | None] = {}
+        complete_votes: dict[str, bool | None] = {}
+        accurate_votes: dict[str, bool | None] = {}
         rationales: dict[str, str] = {}
         completes: list[bool] = []
         accurates: list[bool] = []
@@ -410,6 +485,8 @@ class Jury:
         for mid, r in results.items():
             if r["error"]:
                 votes[mid] = None
+                complete_votes[mid] = None
+                accurate_votes[mid] = None
                 rationales[mid] = r["error"]
                 errors.append(f"{mid}: {r['error']}")
             else:
@@ -417,10 +494,14 @@ class Jury:
                 a = r["accurate"]
                 if c is None or a is None:
                     votes[mid] = None
+                    complete_votes[mid] = None
+                    accurate_votes[mid] = None
                     rationales[mid] = "unparseable verdict"
                     errors.append(f"{mid}: unparseable verdict")
                 else:
                     votes[mid] = c and a
+                    complete_votes[mid] = c
+                    accurate_votes[mid] = a
                     rationales[mid] = r["rationale"]
                     completes.append(c)
                     accurates.append(a)
@@ -441,6 +522,8 @@ class Jury:
             "complete_majority": complete_majority,
             "accurate_majority": accurate_majority,
             "votes": votes,
+            "complete_votes": complete_votes,
+            "accurate_votes": accurate_votes,
             "rationales": rationales,
             "error": "; ".join(errors) if errors else "",
             "usage": {
@@ -468,6 +551,7 @@ class Jury:
 def score_row(
     row: dict[str, str],
     jury: Jury | None,
+    source_docs: str = "",
 ) -> dict[str, Any]:
     """Score a single row through all gates. Returns judge_* columns."""
     out: dict[str, Any] = {c: "" for c in _JUDGE_COLS}
@@ -487,12 +571,18 @@ def score_row(
     if jury is None:
         return out
 
-    verdict = jury.evaluate(question, reference, response)
+    verdict = jury.evaluate(question, reference, response, source_docs=source_docs)
 
     out["judge_complete"] = verdict["complete_majority"]
     out["judge_accurate"] = verdict["accurate_majority"]
     out["judge_votes"] = json.dumps(
         {k: v for k, v in verdict["votes"].items()}, ensure_ascii=False
+    )
+    out["judge_complete_votes"] = json.dumps(
+        {k: v for k, v in verdict["complete_votes"].items()}, ensure_ascii=False
+    )
+    out["judge_accurate_votes"] = json.dumps(
+        {k: v for k, v in verdict["accurate_votes"].items()}, ensure_ascii=False
     )
     out["judge_rationales"] = json.dumps(
         verdict["rationales"], ensure_ascii=False
@@ -618,6 +708,13 @@ def score_run(
     jury = Jury(judge_model_configs)
     print(f"Judge jury: {jury.model_ids}", file=sys.stderr)
 
+    # Load and cache source documents per case
+    source_cache: dict[str, str] = {}
+    case_uuids = {row.get("case_uuid", "") for row in rows} - {""}
+    for case_uuid in case_uuids:
+        source_cache[case_uuid] = _load_case_source(case_uuid, repo_root)
+    print(f"  loaded source docs for {len(source_cache)} cases", file=sys.stderr)
+
     # Score rows
     stats = {"gate0_fail": 0, "llm_called": 0, "cached": 0, "errors": 0, "total": len(rows)}
     pending: list[int] = []
@@ -644,6 +741,9 @@ def score_run(
         ckpt = max(1, checkpoint_every)
         done = 0
 
+        # Sort by case_uuid to maximize provider-side prompt cache hits
+        pending.sort(key=lambda i: rows[i].get("case_uuid", ""))
+
         def _do(idx: int) -> tuple[int, dict[str, Any]]:
             r = rows[idx]
             reference = r.get("human_validated_answer", "")
@@ -657,11 +757,15 @@ def score_run(
                     "judge_accurate": "",
                     "judge_correct": 0,
                     "judge_votes": "",
+                    "judge_complete_votes": "",
+                    "judge_accurate_votes": "",
                     "judge_rationales": "",
                     "judge_error": "",
                 }
 
-            return idx, score_row(r, jury)
+            case_uuid = r.get("case_uuid", "")
+            src = source_cache.get(case_uuid, "")
+            return idx, score_row(r, jury, source_docs=src)
 
         with ThreadPoolExecutor(max_workers=max(1, max_workers)) as ex:
             futures = [ex.submit(_do, i) for i in pending]

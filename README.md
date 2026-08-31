@@ -13,6 +13,8 @@ shape will work.
 
 ## 🔥 Updates
 
+- **[2026/08/31]** We are excited to release MLCR v1.1 that comes with some improvements to judging calibration and a release with [Artificial Analysis](https://artificialanalysis.ai/evaluations/mlcr-aa).
+
 - **[2026/06/18]** We are excited to release MLCR, a new benchmark for evaluating how well LLMs reason over long, complex medical claim files.
 
 ---
@@ -333,12 +335,27 @@ model definition can be swept across multiple thinking budgets.
 
 After a run completes, `mlcr score` evaluates responses against ground-truth:
 
-1. **Gate 0 (free)** — Conciseness check: response char count ≤ 3× reference length
+1. **Gate 0 (free)** — Conciseness check: response char count ≤ 5× reference length
 2. **Gate 1 (LLM)** — Completeness + Accuracy: each response is judged by 3 models
-   (`gemini-3.1-pro-preview`, `claude-opus-4-8-gcp`, `gpt-5.5`) and passes by majority vote
+   (`gemini-3.1-pro-preview`, `claude-opus-4-8-gcp`, `gpt-5.5`) and passes by majority vote.
+   Judges receive the question, the human-validated reference answer, the model
+   response, **and the source documents**. The reference answer defines the expected
+   scope, while the source documents are the authoritative ground truth for factual
+   accuracy. Completeness (is anything *missing*) and accuracy (is anything *wrong*)
+   are scored as independent dimensions.
 
-The scorer writes `results_scoring.csv` with judge columns (`judge_concise`,
-`judge_complete`, `judge_accurate`, `judge_correct`, `judge_votes`, `judge_rationales`).
+The scorer writes `results_scoring.csv` with judge columns:
+
+| Column | Description |
+|--------|-------------|
+| `judge_concise` | 1 if response passed the conciseness gate, 0 otherwise |
+| `judge_complete` | Majority vote (0/1) across judges for completeness |
+| `judge_accurate` | Majority vote (0/1) across judges for accuracy |
+| `judge_correct` | Majority vote (0/1) for overall correctness (complete AND accurate) |
+| `judge_votes` | Per-judge correctness votes (JSON: `{model: true/false}`) |
+| `judge_complete_votes` | Per-judge completeness votes (JSON: `{model: true/false}`) |
+| `judge_accurate_votes` | Per-judge accuracy votes (JSON: `{model: true/false}`) |
+| `judge_rationales` | Per-judge rationale text (JSON: `{model: string}`) |
 
 ```bash
 # Score a completed run

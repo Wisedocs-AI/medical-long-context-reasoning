@@ -73,6 +73,12 @@ class AnthropicGCPProvider(Provider):
 
     def call(self, req: ChatRequest) -> ChatResponse:
         content: list[dict] = []
+        if req.prefix_text:
+            content.append({
+                "type": "text",
+                "text": req.prefix_text,
+                "cache_control": {"type": "ephemeral"},
+            })
         for p in req.images:
             content.append({
                 "type": "image",
@@ -85,11 +91,9 @@ class AnthropicGCPProvider(Provider):
         if req.user_text:
             content.append({"type": "text", "text": req.user_text})
 
-        # Mark the last content block as the prompt-cache breakpoint. The two
-        # thinking variants in each cache group fire back-to-back, so the
-        # default 5-minute TTL keeps the cache warm for both hits at minimal
-        # write-premium cost (1.25x vs 2x for the 1-hour TTL).
-        if content:
+        # When no prefix_text was provided, fall back to the original behavior:
+        # mark the last content block as the prompt-cache breakpoint.
+        if not req.prefix_text and content:
             content[-1]["cache_control"] = {"type": "ephemeral"}
 
         kwargs: dict = {
