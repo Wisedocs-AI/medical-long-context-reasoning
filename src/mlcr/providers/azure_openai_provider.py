@@ -69,6 +69,8 @@ class AzureOpenAIProvider(Provider):
                 "type": "input_image",
                 "image_url": f"data:{media_type};base64,{data}",
             })
+        if req.prefix_text:
+            user_content.insert(0, {"type": "input_text", "text": req.prefix_text})
         if req.user_text:
             user_content.append({"type": "input_text", "text": req.user_text})
         input_items.append({"role": "user", "content": user_content})
@@ -119,6 +121,8 @@ class AzureOpenAIProvider(Provider):
     def _call_chat(self, req: ChatRequest) -> ChatResponse:
         """Use Chat Completions API (no thinking)."""
         user_content: list[dict] = []
+        if req.prefix_text:
+            user_content.append({"type": "text", "text": req.prefix_text})
         for p in req.images:
             media_type = _MEDIA.get(p.suffix.lower(), "image/png")
             data = base64.b64encode(p.read_bytes()).decode()

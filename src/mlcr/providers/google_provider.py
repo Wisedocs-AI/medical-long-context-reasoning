@@ -226,6 +226,8 @@ class GoogleProvider(Provider):
         from google.genai import types  # type: ignore
 
         parts: list = []
+        if req.prefix_text:
+            parts.append(types.Part.from_text(text=req.prefix_text))
         if req.user_text:
             parts.append(types.Part.from_text(text=req.user_text))
         for p in req.images:
@@ -243,19 +245,31 @@ class GoogleProvider(Provider):
         gen_cfg_kwargs["labels"] = dict(_REQUEST_LABELS)
         gen_cfg_kwargs.update(req.model_cfg.extra or {})
 
-        # Context caching: cache all parts (text + images + system instruction).
-        # The API requires non-empty contents even when cached_content is set,
-        # so we send a blank text part as a placeholder.
+        # Context caching: when prefix_text is provided, cache only the prefix
+        # (stable across rows sharing the same source docs). Otherwise fall back
+        # to caching all parts (original behavior).
         cache_name: str | None = None
         request_parts = parts
         if self._cache_registry is not None and parts:
-            cache_name = self._cache_registry.get_or_create(
-                req.model_cfg.model, parts, req.system
-            )
-            if cache_name is not None:
-                gen_cfg_kwargs["cached_content"] = cache_name
-                request_parts = [types.Part.from_text(text="")]
-                gen_cfg_kwargs.pop("system_instruction", None)
+            if req.prefix_text:
+                prefix_parts = [types.Part.from_text(text=req.prefix_text)]
+                cache_name = self._cache_registry.get_or_create(
+                    req.model_cfg.model, prefix_parts, req.system
+                )
+                if cache_name is not None:
+                    gen_cfg_kwargs["cached_content"] = cache_name
+                    # Send only the non-prefix parts as request content
+                    non_prefix = parts[1:]
+                    request_parts = non_prefix if non_prefix else [types.Part.from_text(text="")]
+                    gen_cfg_kwargs.pop("system_instruction", None)
+            else:
+                cache_name = self._cache_registry.get_or_create(
+                    req.model_cfg.model, parts, req.system
+                )
+                if cache_name is not None:
+                    gen_cfg_kwargs["cached_content"] = cache_name
+                    request_parts = [types.Part.from_text(text="")]
+                    gen_cfg_kwargs.pop("system_instruction", None)
 
         t0 = time.time()
         try:

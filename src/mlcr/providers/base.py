@@ -26,6 +26,7 @@ class ChatRequest:
     user_text: str | None
     model_cfg: ModelConfig
     images: list[Path] = field(default_factory=list)
+    prefix_text: str | None = None
 
 
 @dataclass
