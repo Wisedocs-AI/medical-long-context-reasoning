@@ -57,6 +57,8 @@ def apply_thinking(mcfg: ModelConfig, level: str) -> ModelConfig:
         m.extra = extra
     elif mcfg.provider == "azure_openai":
         m.thinking = {"effort": level}
+    elif mcfg.provider == "muse_code":
+        m.thinking = {"effort": level}
     # Other providers (e.g. fake) ignore thinking entirely.
 
     return m

@@ -40,3 +40,8 @@ def _load_builtins() -> None:
         from mlcr.providers.azure_openai_provider import AzureOpenAIProvider
         return AzureOpenAIProvider()
     _REGISTRY.setdefault("azure_openai", _azure_openai)
+
+    def _muse_code():
+        from mlcr.providers.muse_code_provider import MuseCodeProvider
+        return MuseCodeProvider()
+    _REGISTRY.setdefault("muse_code", _muse_code)

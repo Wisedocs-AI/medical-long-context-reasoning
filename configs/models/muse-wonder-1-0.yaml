@@ -1,0 +1,12 @@
+id: muse-wonder-1-0
+provider: muse_code
+model: muse-wonder-1.0
+max_output_tokens: 16384
+temperature: 0.0
+# Runs Muse Wonder via the Muse CLI (`muse exec`).
+# Requires `muse login` (or META_API_KEY). temperature/max_output_tokens
+# are recorded for consistency but the CLI does not accept them; reasoning
+# is controlled by the experiment `thinking:` level (--reasoning-effort).
+extra:
+  contributor_mode: "off"
+  max_model_steps: 1
