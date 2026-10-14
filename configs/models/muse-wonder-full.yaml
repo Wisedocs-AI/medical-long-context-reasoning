@@ -1,0 +1,13 @@
+id: muse-wonder-full
+provider: muse_code
+model: muse-wonder-full
+max_output_tokens: 16384
+temperature: 0.0
+# Muse Wonder Full has no API; this runs it via the Muse CLI.
+# Requires `muse login` with a subscription that has Wonder Full access.
+# temperature/max_output_tokens are recorded for consistency but the CLI
+# does not accept them; reasoning is controlled by the experiment
+# `thinking:` level, mapped to --reasoning-effort.
+extra:
+  contributor_mode: "off"
+  max_model_steps: 1

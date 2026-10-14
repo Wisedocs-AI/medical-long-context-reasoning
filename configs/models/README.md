@@ -30,6 +30,7 @@ For example, `gemini-2.5-flash.yaml` must contain `id: gemini-2.5-flash`.
 | `google` | Vertex AI (Gemini) | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_APPLICATION_CREDENTIALS`, optionally `GOOGLE_CLOUD_LOCATION` |
 | `anthropic_gcp` | Anthropic via GCP | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_APPLICATION_CREDENTIALS`, `ANTHROPIC_GCP_REGION` |
 | `azure_openai` | Azure OpenAI | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` |
+| `muse_code` | Meta models via Muse CLI (`muse exec`) | `muse login` session (or `META_API_KEY`); optional `MUSE_BIN` |
 Install the appropriate optional dependency for your provider:
 
 ```bash
@@ -74,6 +75,25 @@ model: gpt-5.5
 max_output_tokens: 16384
 temperature: 1.0
 ```
+
+### Muse (Meta)
+
+```yaml
+id: muse-wonder-full
+provider: muse_code
+model: muse-wonder-full
+max_output_tokens: 16384
+temperature: 0.0
+extra:
+  contributor_mode: "off"
+  max_model_steps: 1
+```
+
+`muse_code` needs no SDK install — it shells out to the `muse` CLI. Note
+`temperature` and `max_output_tokens` are recorded but not passed to the CLI,
+and no per-call token usage is reported. Supported `extra:` keys:
+`reasoning_effort`, `max_model_steps`, `timeout_s`, `contributor_mode`,
+`workspace`.
 
 ## Adding a New Model
 

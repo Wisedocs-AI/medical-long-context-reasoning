@@ -114,7 +114,8 @@ long-context-evaluation-experiments/
 │       ├── registry.py             # name → provider factory
 │       ├── google_provider.py      # Gemini via Vertex AI
 │       ├── anthropic_gcp_provider.py  # Claude via GCP
-│       └── azure_openai_provider.py   # GPT via Azure OpenAI
+│       ├── azure_openai_provider.py   # GPT via Azure OpenAI
+│       └── muse_code_provider.py      # Meta models via Muse CLI
 ├── mock_data_generation/           # filler generation tooling (has its own README)
 │   └── ai_form_filler.py
 └── runs/                           # experiment outputs (git-ignored)
@@ -247,6 +248,7 @@ cp .env.example .env
 | Anthropic via GCP (Claude) | `ANTHROPIC_GCP_REGION` | GCP region for Claude |
 | Azure OpenAI (GPT) | `AZURE_OPENAI_API_KEY` | API key |
 | Azure OpenAI (GPT) | `AZURE_OPENAI_ENDPOINT` | Endpoint URL |
+| Muse (`muse_code`) | *(none read by mlcr)* | Uses the `muse` CLI login (`muse login`) or `META_API_KEY`; `MUSE_BIN` overrides the executable path |
 
 ---
 
@@ -454,7 +456,7 @@ extra:
   top_p: 1.0
 ```
 
-Available providers: `google`, `anthropic_gcp`, `azure_openai`.
+Available providers: `google`, `anthropic_gcp`, `azure_openai`, `muse_code`.
 
 ### Experiment configs
 
@@ -523,6 +525,15 @@ The provider layer is a thin abstraction over LLM APIs:
 | `google` | Gemini via Vertex AI | `providers/google_provider.py` |
 | `anthropic_gcp` | Claude via GCP | `providers/anthropic_gcp_provider.py` |
 | `azure_openai` | GPT via Azure OpenAI | `providers/azure_openai_provider.py` |
+| `muse_code` | Meta models via the Muse CLI (`muse exec` subprocess; no SDK) | `providers/muse_code_provider.py` |
+
+> **Note on `muse_code`:** Muse is an agent harness, not a raw model
+> endpoint. The provider locks each run down to a single tool-less step
+> (`--preset empty`, shell/write/web tools disabled, empty workspace,
+> contributor mode off), but results still measure *Muse + model* —
+> most importantly Muse Wonder Full, which has no API and is only reachable
+> this way. It also has no temperature control and reports no per-call token
+> usage, so treat its rows as harness-labelled, not directly cost-comparable.
 
 Each provider:
 - Constructs its client lazily from environment variables
